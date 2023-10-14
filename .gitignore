@@ -28,3 +28,4 @@ showtime.o
 simple_client.o
 simple_session_client.o
 transport_client.o
+/build*
