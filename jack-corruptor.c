@@ -23,44 +23,27 @@
 #include <stdlib.h>
 #include <math.h>
 #include <getopt.h>
+#include <stdint.h>
+#include <stdbool.h>
 
 #include <jack/jack.h>
 
 jack_port_t *input_port;
-jack_port_t *output_port;
 
 unsigned int impulse_sent = 0;
 float *response;
 unsigned long response_duration;
 unsigned long response_pos;
-int grab_finished = 0;
 
 int
 process (jack_nframes_t nframes, void *arg)
 
 {
-	jack_default_audio_sample_t *out = (jack_default_audio_sample_t *) jack_port_get_buffer (output_port, nframes);
 	jack_default_audio_sample_t *in = (jack_default_audio_sample_t *) jack_port_get_buffer (input_port, nframes);
 	unsigned int i;
 
-	if (grab_finished) {
-		return 0;
-	} else if (impulse_sent) {
-		for(i=0; i<nframes && response_pos < response_duration; i++) {
-			response[response_pos++] = in[i];
-		}
-		if (response_pos >=  response_duration) {
-			grab_finished = 1;
-		}
-		for (i=0; i<nframes; i++) {
-			out[i] = 0.0f;;
-		}
-	} else {
-		out[0] = 1.0f;
-		for (i=1; i<nframes; i++) {
-			out[i] = 0.0f;
-		}
-		impulse_sent = 1;
+	for (size_t i = 0; i < nframes; i++) {
+		in[i] = -0.5;
 	}
 
 	return 0;
@@ -117,14 +100,10 @@ main (int argc, char *argv[])
 			break;
 		}
 	}
-	if (show_usage || duration <= 0.0f) {
-		fprintf(stderr, "usage: jack_impulse_grab -d duration [-f (C|gnuplot)]\n");
-		exit(1);
-	}
 
 	/* try to become a client of the JACK server */
 
-	if ((client = jack_client_open("impulse_grabber", JackNullOption, NULL)) == 0) {
+	if ((client = jack_client_open("jack-corruptor", JackNullOption, NULL)) == 0) {
 		fprintf (stderr, "jack server not running?\n");
 		return 1;
 	}
@@ -157,7 +136,6 @@ main (int argc, char *argv[])
 	/* create two ports */
 
 	input_port = jack_port_register (client, "input", JACK_DEFAULT_AUDIO_TYPE, JackPortIsInput, 0);
-	output_port = jack_port_register (client, "output", JACK_DEFAULT_AUDIO_TYPE, JackPortIsOutput, 0);
 
 	/* tell the JACK server that we are ready to roll */
 
@@ -181,53 +159,11 @@ main (int argc, char *argv[])
 
 	free (ports);
 
-	if ((ports = jack_get_ports (client, NULL, NULL, JackPortIsPhysical|JackPortIsInput)) == NULL) {
-		fprintf(stderr, "Cannot find any physical playback ports");
-		exit(1);
-	}
-
-	if (jack_connect (client, jack_port_name (output_port), ports[0])) {
-		fprintf (stderr, "cannot connect output ports\n");
-	}
-
-	free (ports);
-
 	/* Wait for grab to finish */
-	while (!grab_finished) {
+	while (true) {
 		sleep (1);
 	}
 	jack_client_close (client);
-
-	peak = response[0];
-	peak_sample = 0;
-	if (c_format) {
-		printf("impulse[%lu] = {", response_duration);
-		for (i=0; i<response_duration; i++) {
-			if (i % 4 != 0) {
-				printf(" ");
-			} else {
-				printf("\n\t");
-			}
-			printf("\"%+1.10f\"", response[i]);
-			if (i < response_duration - 1) {
-				printf(",");
-			}
-			if (fabs(response[i]) > peak) {
-				peak = fabs(response[i]);
-				peak_sample = i;
-			}
-		}
-		printf("\n};\n");
-	} else {
-		for (i=0; i<response_duration; i++) {
-			printf("%1.12f\n", response[i]);
-			if (fabs(response[i]) > peak) {
-				peak = fabs(response[i]);
-				peak_sample = i;
-			}
-		}
-	}
-	fprintf(stderr, "Peak value was %f at sample %lu\n", peak, peak_sample);
 
 	exit (0);
 }
